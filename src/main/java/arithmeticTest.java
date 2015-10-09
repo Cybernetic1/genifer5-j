@@ -8,10 +8,16 @@ import org.encog.mathutil.randomize.ConsistentRandomizer;
 import org.encog.ml.data.MLData;
 import org.encog.ml.data.MLDataPair;
 import org.encog.ml.data.MLDataSet;
+import org.encog.ml.data.basic.BasicMLData;
 import org.encog.ml.data.basic.BasicMLDataSet;
 import org.encog.neural.networks.BasicNetwork;
 import org.encog.neural.networks.layers.BasicLayer;
 import org.encog.neural.networks.training.propagation.back.Backpropagation;
+import org.encog.persist.EncogDirectoryPersistence;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Arrays;
 
 // **************** 2-Digit Primary-school Subtraction Arithmetic test *****************
 
@@ -43,10 +49,10 @@ import org.encog.neural.networks.training.propagation.back.Backpropagation;
 
 public class arithmeticTest
 	{
-	public static void main(final String args[])
+	public static void main(final String args[]) throws IOException, ClassNotFoundException
 		{
 		System.out.println("Arithmetic test\n");
-		arithmetic_testB();
+		arithmetic_testC();
 		}
 
 	// This defines the transition operator acting on vector space K1 (of dimension 10)
@@ -241,9 +247,9 @@ public class arithmeticTest
 	// First we try to learn the transition operator as a simple multi-layer NN.
 	// This should be very simple and back-prop (or r-prop) will do.
 
-	public static void arithmetic_testB()
+	public static void arithmetic_testB() throws IOException
 		{
-		Integer N = 50;			// size of training set
+		Integer N = 1000;			// size of training set
 		double Ks[][] = new double[N][7];
 		double Ks_star[][] = new double[N][6];
 
@@ -257,16 +263,9 @@ public class arithmeticTest
 		network.getStructure().finalizeStructure();
 		network.reset();
 		new ConsistentRandomizer(-1, 1, 500).randomize(network);
-		System.out.println(network.dumpWeights());
+		// System.out.println(network.dumpWeights());
 
-		// create training data
-		MLDataSet trainingSet = new BasicMLDataSet(Ks, Ks_star);
-
-		// set up trainer
-		final Backpropagation train = new Backpropagation(network, trainingSet, 0.7, 0.3);
-		train.fixFlatSpot(false);
-
-		Integer M = 50;
+		Integer M = 100;
 		Double[] errors1 = new Double[M];	// two arrays for recording errors
 		Double[] errors2 = new Double[M];
 		double sum_err1 = 0.0, sum_err2 = 0.0;	// sums of errors
@@ -306,13 +305,21 @@ public class arithmeticTest
 					Ks_star[j][k - 4] = K_star[k];
 				}
 
+			// create training data
+			MLDataSet trainingSet = new BasicMLDataSet(Ks, Ks_star);
+
+			// set up trainer
+			final Backpropagation train = new Backpropagation(network, trainingSet);
+			train.fixFlatSpot(false);
+
 			// train the network!
 			train.iteration();
 
 			// Difference between actual outcome and desired value:
 			Double training_err = train.getError();
-			System.out.println(" Error = " + training_err.toString());
+			System.out.format(" Error = %.10f\n", training_err);
 
+			/* Calculate mean error
 			// Update error arrays cyclically
 			// (This is easier to understand by referring to the next block of code)
 			sum_err2 -= errors2[tail];
@@ -331,7 +338,14 @@ public class arithmeticTest
 			if (tail == M)				// loop back in cycle
 				tail = 0;
 
-			// test the neural network
+			Double ratio = (sum_err2 - sum_err1) / sum_err1;
+			if (ratio > 0)
+				System.out.println("error ratio = " + ratio.toString());
+			else
+				System.out.println("error ratio = \33[31m" + ratio.toString() + "\33[39m");
+			*/
+
+			/* test the neural network
 			System.out.println("Neural Network Results:");
 			for (MLDataPair pair : trainingSet)
 				{
@@ -339,6 +353,7 @@ public class arithmeticTest
 				System.out.println(pair.getInput().getData(0) + "," + pair.getInput().getData(1)
 						+ ", actual=" + output.getData(0) + ",ideal=" + pair.getIdeal().getData(0));
 				}
+			*/
 
 			/* Testing set
 			Double test_err = 0.0;
@@ -370,12 +385,6 @@ public class arithmeticTest
 			System.out.print("random test error = " + test_err.toString());
 			*/
 
-			Double ratio = (sum_err2 - sum_err1) / sum_err1;
-			if (ratio > 0)
-				System.out.println("error ratio = " + ratio.toString());
-			else
-				System.out.println("error ratio = \33[31m" + ratio.toString() + "\33[39m");
-
 			if ((i % 5000) == 0)			// display status periodically
 				{
 				// plot_output(Net);
@@ -392,7 +401,7 @@ public class arithmeticTest
 			//	break;
 			// if (ratio - 0.5f < 0.0000001)	// ratio == 0.5 means stationary
 			// if (test_err < 0.01)
-			if (train.getError() < 0.1)
+			if (training_err < 0.008)
 				break;
 			}
 
@@ -403,8 +412,173 @@ public class arithmeticTest
 		// plot_W(Net);
 
 		//saveNet(Net, NumLayers, neuronsOfLayer);
+		EncogDirectoryPersistence.saveObject(new File("testing.eg"), network);
 		Encog.getInstance().shutdown();
 		}
+
+	public static int arithmetic_testC_1(BasicNetwork network)
+		{
+		double[] K1 = new double[10];
+		double[] K2 = new double[10];
+		double a1, a0, b1, b0;
+		int ans = 0;
+
+		java.util.Random r = new java.util.Random();
+		// generate A,B randomly
+		a1 = Math.floor(r.nextDouble() * 10.0) / 10.0;
+		K1[0] = a1;
+		a0 = Math.floor(r.nextDouble() * 10.0) / 10.0;
+		K1[1] = a0;
+		b1 = Math.floor(r.nextDouble() * 10.0) / 10.0;
+		K1[2] = b1;
+		b0 = Math.floor(r.nextDouble() * 10.0) / 10.0;
+		K1[3] = b0;
+
+		System.out.format("%c%c, %c%c: ", digit(a1), digit(a0), digit(b1), digit(b0));
+
+		// correct answer
+		Integer a = (int) (a1 * 10.0) * 10 + (int) (a0 * 10.0);
+		Integer b = (int) (b1 * 10.0) * 10 + (int) (b0 * 10.0);
+		System.out.format("%d - ", a);
+		System.out.format("%d = ", b);
+
+		int c = a - b;
+		double c1 = (double)(c / 10) / 10.0;
+		double c0 = (double)(c % 10) / 10.0;
+		System.out.format("%d\n", c);
+
+		//	double carryFlag = rand() / (double) RAND_MAX;
+		//	K1[4] = carryFlag;
+		//	double currentDigit = rand() / (double) RAND_MAX;
+		//	K1[5] = currentDigit;
+
+		K1[4] = 0.0;				// carry flag
+		K1[5] = 0.0;				// current digit (0 or 1)
+		K1[6] = 0.0;				// C1 (note that C1 is part of the input also)
+		K1[7] = 0.0;				// C0 (but C0 is not an input)
+		K1[8] = 0.0;				// result ready flag
+		K1[9] = 0.0;				// underflow flag
+
+		for (int loop = 0; loop < 2; ++loop)
+			{
+			// call the transition operator
+			double[] in_array = Arrays.copyOfRange(K1, 0, 7);	// end-index = exclusive!
+			MLData input = new BasicMLData(in_array);
+			final MLData output = network.compute(input);
+			for (int j = 0; j < 6; j++)
+				System.out.format("%f ", output.getData(j));
+			System.out.println();
+			// input.getData(0), input.getData(1), ...
+			// output.getData(0), ...
+
+			for (int k = 4; k < 10; ++k)    // 4..10 = output vector
+				K2[k] = output.getData(k - 4);
+
+			// get result
+			if (K2[8] > 0.5)          		// result ready?
+				{
+				double err1 = 0.0, err2 = 0.0;
+				boolean correct = true;
+				if (c < 0)                	// answer is negative
+					{
+					if (K2[9] < 0.5)    	// underflow is clear but should be set
+						correct = false;
+					}
+				else
+					{
+					if (K2[9] >= 0.5)    	// underflow is set but should be clear
+						correct = false;
+
+					err1 = Math.abs(K2[6] - c1);
+					err2 = Math.abs(K2[7] - c0);
+					System.out.format(" err1, err2 = %f, %f\n", err1, err2);
+					if (err1 > 0.099999)
+						correct = false;
+					if (err2 > 0.099999)
+						correct = false;
+					}
+
+				System.out.format(" answer = %c%c   ", digit(c1), digit(c0));
+				System.out.format(" genifer = %c%c\n", digit(K2[6]), digit(K2[7]));
+				// System.out.print(" C1*,C0* = %f, %f   ", c1, c0);
+				// System.out.print(" C1,C0 = %f, %f\n", K2[6], K2[7]);
+
+				if (correct && c > 0)
+					{
+					ans = 1;
+					System.out.print("\33[32m********* Yes!!!!\33[39m\n");
+					}
+				else if (correct)
+					{
+					ans = 2;
+					System.out.print("\33[34mNegative YES \33[39m\n");
+					}
+				else
+					{
+					ans = 3;
+					System.out.print("\33[31mWrong!!!! ");
+					if (c < 0)
+						System.out.format(" underflow = %f \33[39m\n", K2[9]);
+					else
+						System.out.format("\33[35m err1, err2 = %f, %f \33[39m\n", err1, err2);
+
+					// beep();
+					}
+				}
+			else
+				{
+				for (int k = 4; k < 10; ++k)
+					K1[k] = K2[k];
+
+				if (loop >= 1)
+					{
+					ans = 4;
+					System.out.format("\33[31mNon-termination: ");
+					System.out.format("result ready = %f \33[39m\n", K2[8]);
+					// beep();
+					}
+				}
+			}
+		return ans;
+		}
+
+	public static void arithmetic_testC() throws IOException, ClassNotFoundException
+		{
+		BasicNetwork network = (BasicNetwork) EncogDirectoryPersistence
+				.loadObject(new File("testing.eg"));
+
+		int ans_correct = 0, ans_negative = 0, ans_wrong = 0, ans_non_term = 0;
+		Integer P = 100;
+		for (int i = 0; i < P; ++i)
+			{
+			System.out.format("(%d) ", i);
+			switch (arithmetic_testC_1(network))
+				{
+				case 1:
+					++ans_correct;
+					break;
+				case 2:
+					++ans_negative;
+					break;
+				case 3:
+					++ans_wrong;
+					break;
+				case 4:
+					++ans_non_term;
+					break;
+				default:
+					System.out.print("Answer error!\n");
+					break;
+				}
+			}
+
+		System.out.print("\n=======================\n");
+		System.out.format("Answers correct  = %d (%.1f%%)\n", ans_correct, ans_correct * 100 / (float) P);
+		System.out.format("Answers negative = %d (%.1f%%)\n", ans_negative, ans_negative * 100 / (float) P);
+		System.out.format("Answers wrong    = %d (%.1f%%)\n", ans_wrong, ans_wrong * 100 / (float) P);
+		System.out.format("Answers non-term = %d (%.1f%%)\n", ans_non_term, ans_non_term * 100 / (float) P);
+		}
+
 
 	/* The input necessary for XOR. */
 	public static double XOR_INPUT[][] = {{1.0, 0.0}, {0.0, 0.0},
