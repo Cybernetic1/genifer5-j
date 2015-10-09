@@ -2,6 +2,17 @@
  * Created by yky on 10/9/15.
  */
 
+import org.encog.Encog;
+import org.encog.engine.network.activation.ActivationSigmoid;
+import org.encog.mathutil.randomize.ConsistentRandomizer;
+import org.encog.ml.data.MLData;
+import org.encog.ml.data.MLDataPair;
+import org.encog.ml.data.MLDataSet;
+import org.encog.ml.data.basic.BasicMLDataSet;
+import org.encog.neural.networks.BasicNetwork;
+import org.encog.neural.networks.layers.BasicLayer;
+import org.encog.neural.networks.training.propagation.back.Backpropagation;
+
 // **************** 2-Digit Primary-school Subtraction Arithmetic test *****************
 
 // The goal is to perform subtraction like a human child would.
@@ -32,26 +43,25 @@
 
 public class arithmeticTest
 	{
-
 	public static void main(final String args[])
 		{
 		System.out.println("Arithmetic test\n");
-		arithmetic_testA();
+		arithmetic_testB();
 		}
 
 	// This defines the transition operator acting on vector space K1 (of dimension 10)
-	public static void transition(Double K1[], Double K2[])
+	public static void transition(double K1[], double K2[])
 		{
-		Double A1 = Math.floor(K1[0] * 10.0) / 10.0;
-		Double A0 = Math.floor(K1[1] * 10.0) / 10.0;
-		Double B1 = Math.floor(K1[2] * 10.0) / 10.0;
-		Double B0 = Math.floor(K1[3] * 10.0) / 10.0;
-		Double carryFlag = K1[4];
-		Double currentDigit = K1[5];
-		Double C1 = K1[6];
-		Double C0 = K1[7];
-		Double resultReady = K1[8];
-		Double underflowError = K1[9];
+		double A1 = Math.floor(K1[0] * 10.0) / 10.0;
+		double A0 = Math.floor(K1[1] * 10.0) / 10.0;
+		double B1 = Math.floor(K1[2] * 10.0) / 10.0;
+		double B0 = Math.floor(K1[3] * 10.0) / 10.0;
+		double carryFlag = K1[4];
+		double currentDigit = K1[5];
+		double C1 = K1[6];
+		double C0 = K1[7];
+		double resultReady = K1[8];
+		double underflowError = K1[9];
 
 		// System.out.println("A1,A0 = " + A1.toString() + A0.toString());
 		// System.out.println("B1,B0 = " + B1.toString() + B0.toString());
@@ -127,8 +137,8 @@ public class arithmeticTest
 	// This tests both the arithmetic of the digits as well as the settings of flags.
 	public static void arithmetic_testA_1()
 		{
-		Double[] K1 = new Double[10];
-		Double[] K2 = new Double[10];
+		double[] K1 = new double[10];
+		double[] K2 = new double[10];
 		Double a1, a0, b1, b0;
 
 		// generate A,B randomly
@@ -204,15 +214,14 @@ public class arithmeticTest
 				else
 					{
 					System.out.println("\33[31mWrong!!!!!! ");
-					System.out.println("underflow = " + K2[9].toString() + "\33[39m\n");
+					System.out.println("underflow = " + Double.toString(K2[9]) + "\33[39m\n");
 					// beep();
 					}
 				}
 			else
 				{
 				// Copy output K vector to input, for the next iteration
-				for (int k = 0; k < 10; ++k)
-					K1[k] = K2[k];
+				System.arraycopy(K2, 0, K1, 0, 10);
 				}
 			}
 		}
@@ -225,6 +234,224 @@ public class arithmeticTest
 			System.out.print("(" + n.toString() + ") ");
 			arithmetic_testA_1();
 			}
+		}
+
+	// At this point we are able to generate training examples for the transition operator.
+	// Now try to see if we can train an ANN to approximate this operator.
+	// First we try to learn the transition operator as a simple multi-layer NN.
+	// This should be very simple and back-prop (or r-prop) will do.
+
+	public static void arithmetic_testB()
+		{
+		Integer N = 50;			// size of training set
+		double Ks[][] = new double[N][7];
+		double Ks_star[][] = new double[N][6];
+
+		// create a neural network, without using a factory
+		BasicNetwork network = new BasicNetwork();
+		// network config = {7, 20, 20, 6}; // first = input layer, last = output layer
+		network.addLayer(new BasicLayer(null, true, 7));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 20));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), false, 20));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), false, 6));
+		network.getStructure().finalizeStructure();
+		network.reset();
+		new ConsistentRandomizer(-1, 1, 500).randomize(network);
+		System.out.println(network.dumpWeights());
+
+		// create training data
+		MLDataSet trainingSet = new BasicMLDataSet(Ks, Ks_star);
+
+		// set up trainer
+		final Backpropagation train = new Backpropagation(network, trainingSet, 0.7, 0.3);
+		train.fixFlatSpot(false);
+
+		Integer M = 50;
+		Double[] errors1 = new Double[M];	// two arrays for recording errors
+		Double[] errors2 = new Double[M];
+		double sum_err1 = 0.0, sum_err2 = 0.0;	// sums of errors
+		int tail = 0;			// index for cyclic arrays (last-in, first-out)
+
+		for (int i = 0; i < M; ++i)			// clear errors to 0.0
+			errors1[i] = errors2[i] = 0.0;
+
+		// start_NN_plot();
+		// start_W_plot();
+		// start_K_plot();
+		// start_output_plot();
+		// plot_ideal();
+		// print("Press 'Q' to quit\n\n");
+
+		double[] K = new double[10];
+		double[] K_star = new double[10];
+		java.util.Random r = new java.util.Random();
+
+		for (Integer i = 0; true; ++i)			// training epochs
+			{
+			System.out.print("[" + i.toString() + "] ");
+
+			// Prepare training set
+			for (int j = 0; j < N; ++j)
+				{
+				// Create random K vector (only 4 + 2 + 1 elements)
+				for (int k = 0; k < 4; ++k)
+					K[k] = Ks[j][k] = Math.floor(r.nextDouble() * 10.0) / 10.0;
+				for (int k = 4; k < 6; ++k)
+					K[k] = Ks[j][k] = r.nextBoolean() ? 1.0 : 0.0;
+				K[6] = Ks[j][6] = Math.floor(r.nextDouble() * 10.0) / 10.0;
+
+				transition(K, K_star);				// get ideal values
+
+				for (int k = 4; k < 10; ++k)
+					Ks_star[j][k - 4] = K_star[k];
+				}
+
+			// train the network!
+			train.iteration();
+
+			// Difference between actual outcome and desired value:
+			Double training_err = train.getError();
+			System.out.println(" Error = " + training_err.toString());
+
+			// Update error arrays cyclically
+			// (This is easier to understand by referring to the next block of code)
+			sum_err2 -= errors2[tail];
+			sum_err2 += errors1[tail];
+			sum_err1 -= errors1[tail];
+			sum_err1 += training_err;
+			// print("sum1, sum2 = %lf %lf\n", sum_err1, sum_err2);
+
+			Double mean_err = (i < M) ? (sum_err1 / i) : (sum_err1 / M);
+			System.out.println("mean abs error = " + mean_err.toString());
+
+			// record new error in cyclic arrays
+			errors2[tail] = errors1[tail];
+			errors1[tail] = training_err;
+			++tail;
+			if (tail == M)				// loop back in cycle
+				tail = 0;
+
+			// test the neural network
+			System.out.println("Neural Network Results:");
+			for (MLDataPair pair : trainingSet)
+				{
+				final MLData output = network.compute(pair.getInput());
+				System.out.println(pair.getInput().getData(0) + "," + pair.getInput().getData(1)
+						+ ", actual=" + output.getData(0) + ",ideal=" + pair.getIdeal().getData(0));
+				}
+
+			/* Testing set
+			Double test_err = 0.0;
+			for (int j = 0; j < 10; ++j)
+				{
+				// Create random K vector (only 4 + 2 elements)
+				for (int k = 0; k < 4; ++k)
+					K[k] = Math.floor(r.nextDouble() * 10.0) / 10.0;
+				for (int k = 4; k < 6; ++k)
+					K[k] = r.nextBoolean() ? 1.0 : 0.0;
+				K[6] = Math.floor(r.nextDouble() * 10.0) / 10.0;
+
+				forward_prop(Net, 6, K);		// input vector dimension = 6
+
+				// Desired value = K_star
+				transition(K, K_star);
+
+				Double single_err = 0.0;
+				for (int k = 4; k < 10; ++k)
+					{
+					double error = K_star[k] - LastLayer.neurons[k - 4].output;
+					LastLayer.neurons[k - 4].error = error;		// record this for back-prop
+
+					single_err += Math.abs(error);		// record sum of errors
+					}
+				test_err += single_err;
+				}
+			test_err /= 10.0;
+			System.out.print("random test error = " + test_err.toString());
+			*/
+
+			Double ratio = (sum_err2 - sum_err1) / sum_err1;
+			if (ratio > 0)
+				System.out.println("error ratio = " + ratio.toString());
+			else
+				System.out.println("error ratio = \33[31m" + ratio.toString() + "\33[39m");
+
+			if ((i % 5000) == 0)			// display status periodically
+				{
+				// plot_output(Net);
+				// flush_output();
+				// plot_W(Net);
+				// plot_NN(Net);
+				// plot_trainer(0);		// required to clear the window
+				// plot_K();
+				// if (quit = delay_vis(0))
+					// break;
+				}
+
+			// if (isnan(ratio))
+			//	break;
+			// if (ratio - 0.5f < 0.0000001)	// ratio == 0.5 means stationary
+			// if (test_err < 0.01)
+			if (train.getError() < 0.1)
+				break;
+			}
+
+		System.out.print("Training finished\n\n");
+		// beep();
+		// plot_output(Net);
+		// flush_output();
+		// plot_W(Net);
+
+		//saveNet(Net, NumLayers, neuronsOfLayer);
+		Encog.getInstance().shutdown();
+		}
+
+	/* The input necessary for XOR. */
+	public static double XOR_INPUT[][] = {{1.0, 0.0}, {0.0, 0.0},
+			{0.0, 1.0}, {1.0, 1.0}};
+
+	/* The ideal data necessary for XOR. */
+	public static double XOR_IDEAL[][] = {{1.0}, {0.0}, {1.0}, {0.0}};
+
+	public static void simple_xor_test()
+		{
+		// create a neural network, without using a factory
+		BasicNetwork network = new BasicNetwork();
+		network.addLayer(new BasicLayer(null, true, 2));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 2));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), false, 1));
+		network.getStructure().finalizeStructure();
+		network.reset();
+		new ConsistentRandomizer(-1, 1, 500).randomize(network);
+		System.out.println(network.dumpWeights());
+
+		// create training data
+		MLDataSet trainingSet = new BasicMLDataSet(XOR_INPUT, XOR_IDEAL);
+
+		// train the neural network
+		final Backpropagation train = new Backpropagation(network, trainingSet, 0.7, 0.3);
+		train.fixFlatSpot(false);
+
+		int epoch = 1;
+
+		do
+			{
+			train.iteration();
+			System.out
+					.println("Epoch #" + epoch + " Error:" + train.getError());
+			epoch++;
+			} while (train.getError() > 0.01);
+
+		// test the neural network
+		System.out.println("Neural Network Results:");
+		for (MLDataPair pair : trainingSet)
+			{
+			final MLData output = network.compute(pair.getInput());
+			System.out.println(pair.getInput().getData(0) + "," + pair.getInput().getData(1)
+					+ ", actual=" + output.getData(0) + ",ideal=" + pair.getIdeal().getData(0));
+			}
+
+		Encog.getInstance().shutdown();
 		}
 
 	}
