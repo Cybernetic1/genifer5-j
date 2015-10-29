@@ -6,7 +6,6 @@ import org.encog.Encog;
 import org.encog.engine.network.activation.ActivationSigmoid;
 import org.encog.mathutil.randomize.ConsistentRandomizer;
 import org.encog.ml.data.MLData;
-import org.encog.ml.data.MLDataPair;
 import org.encog.ml.data.MLDataSet;
 import org.encog.ml.data.basic.BasicMLData;
 import org.encog.ml.data.basic.BasicMLDataSet;
@@ -19,6 +18,8 @@ import sun.audio.AudioStream;
 
 import java.io.*;
 import java.util.Arrays;
+
+// Similar to Test1, with alternative representation of numbers
 
 // **************** 2-Digit Primary-school Subtraction Arithmetic test *****************
 
@@ -48,7 +49,7 @@ import java.util.Arrays;
 //			else Underflow error
 //			result-ready = 1
 
-public class arithmeticTest
+public class arithmeticTest2
 	{
 	public static void beep()
 		{
@@ -81,42 +82,38 @@ public class arithmeticTest
 		int c = '!';
 		while (c != 'q')
 			{
-			System.out.println("\nArithmetic test\n");
-			System.out.println("[a] test arithmetic operator\n");
-			System.out.println("[b] train network\n");
-			System.out.println("[c] test network\n");
+			System.out.println("\nArithmetic test 2\n");
+			System.out.println("[0] test arithmetic operator\n");
+			System.out.println("[1] train network\n");
+			System.out.println("[2] test network\n");
 			System.out.println("[q] quit\n");
 			do
 				c = System.in.read();
 			while (!Character.isLetterOrDigit(c));
 
-			long startTime = System.currentTimeMillis();
-
 			switch (c)
 				{
-				case 'a':
+				case '0':
 					arithmetic_testA();
 					break;
-				case 'b':
+				case '1':
 					arithmetic_testB();
 					break;
-				case 'c':
+				case '2':
 					arithmetic_testC();
 					break;
 				default:
 					break;
 				}
-
-			long duration = System.currentTimeMillis() - startTime;
-			int seconds = (int) ((duration / 1000) % 60);
-			int minutes = (int) ((duration / 1000) / 60);
-			System.out.format("\nTime elapsed = %d:%d\n", minutes, seconds);
 			}
 		}
 
 	// This defines the transition operator acting on vector space K1 (of dimension 10)
 	public static void transition(double K1[], double K2[])
 		{
+		// In this version, the 2 numbers A and B belong to [0,100] and are represented
+		// by 7 binary digits each (2^7 = 128).
+		// We can optionally discretize the binary bytes, but this is not done now.
 		double A1 = Math.floor(K1[0] * 10.0) / 10.0;
 		double A0 = Math.floor(K1[1] * 10.0) / 10.0;
 		double B1 = Math.floor(K1[2] * 10.0) / 10.0;
@@ -127,20 +124,22 @@ public class arithmeticTest
 		double C0 = K1[7];
 		double resultReady = K1[8];
 		double underflowError = K1[9];
+		double C0b = K1[10];
 
 		// System.out.println("A1,A0 = " + A1.toString() + A0.toString());
 		// System.out.println("B1,B0 = " + B1.toString() + B0.toString());
 
 		if (currentDigit < 0.5)
 			{
+			C0 = A0 - B0;
 			if (A0 >= B0)                // C seems to support >= for comparison of doubles
 				{
-				C0 = A0 - B0;
+				C0b = C0;
 				carryFlag = 0.0;
 				}
 			else
 				{
-				C0 = 1.0 + (A0 - B0);
+				C0b = 1.0 + C0;
 				carryFlag = 1.0;
 				}
 			currentDigit = 1.0;
@@ -186,6 +185,7 @@ public class arithmeticTest
 		K2[7] = C0;
 		K2[8] = resultReady;
 		K2[9] = underflowError;
+		K2[10] = C0b;
 		}
 
 	private static char digit(double d)
@@ -202,8 +202,8 @@ public class arithmeticTest
 	// This tests both the arithmetic of the digits as well as the settings of flags.
 	public static void arithmetic_testA_1()
 		{
-		double[] K1 = new double[10];
-		double[] K2 = new double[10];
+		double[] K1 = new double[11];
+		double[] K2 = new double[11];
 		Double a1, a0, b1, b0;
 
 		// generate A,B randomly
@@ -263,7 +263,7 @@ public class arithmeticTest
 						correct = false;
 
 					double err1 = Math.abs(K2[6] - c1);
-					double err2 = Math.abs(K2[7] - c0);
+					double err2 = Math.abs(K2[10] - c0);
 					if (err1 > 0.001)
 						correct = false;
 					if (err2 > 0.001)
@@ -271,7 +271,7 @@ public class arithmeticTest
 					}
 
 				System.out.println(" answer = " + digit(c1) + digit(c0));
-				System.out.println(" genifer = " + digit(K2[6]) + digit(K2[7]));
+				System.out.println(" genifer = " + digit(K2[6]) + digit(K2[10]));
 
 				if (correct)
 					System.out.println
@@ -286,7 +286,7 @@ public class arithmeticTest
 			else
 				{
 				// Copy output K vector to input, for the next iteration
-				System.arraycopy(K2, 0, K1, 0, 10);
+				System.arraycopy(K2, 0, K1, 0, 11);
 				}
 			}
 		}
@@ -309,16 +309,19 @@ public class arithmeticTest
 	public static void arithmetic_testB() throws IOException
 		{
 		Integer N = 1000;			// size of training set
-		double Ks[][] = new double[N][8];
-		double Ks_star[][] = new double[N][6];
+		double Ks[][] = new double[N][7];
+		double Ks_star[][] = new double[N][7];
 
 		// create a neural network, without using a factory
 		BasicNetwork network = new BasicNetwork();
 		// network config = {7, 20, 20, 6}; // first = input layer, last = output layer
-		network.addLayer(new BasicLayer(null, true, 8));
-		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 13));
+		network.addLayer(new BasicLayer(null, true, 7));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 15));
 		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 10));
-		network.addLayer(new BasicLayer(new ActivationSigmoid(), false, 6));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 10));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 10));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), true, 10));
+		network.addLayer(new BasicLayer(new ActivationSigmoid(), false, 7));
 		network.getStructure().finalizeStructure();
 		network.reset();
 		new ConsistentRandomizer(-1, 1, 500).randomize(network);
@@ -340,8 +343,8 @@ public class arithmeticTest
 		// plot_ideal();
 		// print("Press 'Q' to quit\n\n");
 
-		double[] K = new double[10];
-		double[] K_star = new double[10];
+		double[] K = new double[11];
+		double[] K_star = new double[11];
 		java.util.Random r = new java.util.Random();
 
 		for (Integer i = 0; true; ++i)			// training epochs
@@ -351,17 +354,16 @@ public class arithmeticTest
 			// Prepare training set
 			for (int j = 0; j < N; ++j)
 				{
-				// Create input random K vector (only 4 + 2 + 2 elements)
+				// Create random K vector (only 4 + 2 + 1 elements)
 				for (int k = 0; k < 4; ++k)
 					K[k] = Ks[j][k] = Math.floor(r.nextDouble() * 10.0) / 10.0;
 				for (int k = 4; k < 6; ++k)
 					K[k] = Ks[j][k] = r.nextBoolean() ? 1.0 : 0.0;
-				for (int k = 6; k < 8; ++k)
-					K[k] = Ks[j][k] = Math.floor(r.nextDouble() * 10.0) / 10.0;
+				K[6] = Ks[j][6] = Math.floor(r.nextDouble() * 10.0) / 10.0;
 
 				transition(K, K_star);				// get ideal values
 
-				for (int k = 4; k < 10; ++k)		// Output
+				for (int k = 4; k < 11; ++k)
 					Ks_star[j][k - 4] = K_star[k];
 				}
 
@@ -372,8 +374,6 @@ public class arithmeticTest
 			final Backpropagation train = new Backpropagation(network, trainingSet);
 			train.fixFlatSpot(false);
 
-			// System.out.format("\nLearning rate = %f\n", train.getLearningRate());
-			// System.out.format("Momentum = %f\n", train.getMomentum());
 			// train the network!
 			train.iteration();
 
@@ -463,7 +463,7 @@ public class arithmeticTest
 			//	break;
 			// if (ratio - 0.5f < 0.0000001)	// ratio == 0.5 means stationary
 			// if (test_err < 0.01)
-			if (training_err < 0.0001)
+			if (training_err < 0.001)
 				break;
 			}
 
@@ -480,8 +480,8 @@ public class arithmeticTest
 
 	public static int arithmetic_testC_1(BasicNetwork network)
 		{
-		double[] K1 = new double[10];
-		double[] K2 = new double[10];
+		double[] K1 = new double[11];
+		double[] K2 = new double[11];
 		double a1, a0, b1, b0;
 		int ans = 0;
 
@@ -520,20 +520,21 @@ public class arithmeticTest
 		K1[7] = 0.0;				// C0 (but C0 is not an input)
 		K1[8] = 0.0;				// result ready flag
 		K1[9] = 0.0;				// underflow flag
+		K1[10] = 0.0;				// C0b
 
 		for (int loop = 0; loop < 2; ++loop)
 			{
 			// call the transition operator
-			double[] in_array = Arrays.copyOfRange(K1, 0, 8);	// end-index = exclusive!
+			double[] in_array = Arrays.copyOfRange(K1, 0, 7);	// end-index = exclusive!
 			MLData input = new BasicMLData(in_array);
 			final MLData output = network.compute(input);
-			for (int j = 0; j < 6; j++)
+			for (int j = 0; j < 7; j++)
 				System.out.format("%f ", output.getData(j));
 			System.out.println();
 			// input.getData(0), input.getData(1), ...
 			// output.getData(0), ...
 
-			for (int k = 4; k < 10; ++k)    // 4..10 = output vector
+			for (int k = 4; k < 11; ++k)    // 4..10 = output vector
 				K2[k] = output.getData(k - 4);
 
 			// get result
@@ -552,16 +553,16 @@ public class arithmeticTest
 						correct = false;
 
 					err1 = Math.abs(K2[6] - c1);
-					err2 = Math.abs(K2[7] - c0);
+					err2 = Math.abs(K2[10] - c0);
 					System.out.format(" err1, err2 = %f, %f\n", err1, err2);
-					if (err1 > 0.05)
+					if (err1 > 0.099999)
 						correct = false;
-					if (err2 > 0.05)
+					if (err2 > 0.099999)
 						correct = false;
 					}
 
 				System.out.format(" answer = %c%c   ", digit(c1), digit(c0));
-				System.out.format(" genifer = %c%c\n", digit(K2[6]), digit(K2[7]));
+				System.out.format(" genifer = %c%c\n", digit(K2[6]), digit(K2[10]));
 				// System.out.print(" C1*,C0* = %f, %f   ", c1, c0);
 				// System.out.print(" C1,C0 = %f, %f\n", K2[6], K2[7]);
 
@@ -589,7 +590,7 @@ public class arithmeticTest
 				}
 			else
 				{
-				for (int k = 4; k < 10; ++k)
+				for (int k = 4; k < 11; ++k)
 					K1[k] = K2[k];
 
 				if (loop >= 1)
